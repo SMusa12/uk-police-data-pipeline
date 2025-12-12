@@ -16,6 +16,7 @@ module Fetch
     , fetchCrimesByLocation
     , fetchCrimesByForce
     , fetchCrimeCategories
+    , fetchForceByLocation
     , APIError(..)
     , testFetch
     ) where
@@ -68,7 +69,12 @@ fetchCrimesByForce forceId date = do
     let url = baseURL ++ "/crimes-no-location?category=all-crime&force="
                 ++ forceId ++ "&date=" ++ date
     makeRequest url
-
+-- Fetching the police force responsible for a specific location
+fetchForceByLocation :: Double -> Double -> IO (Either APIError BL.ByteString)
+fetchForceByLocation lat lng = do
+    putStrLn $ "Fetching police force for location (" ++ show lat ++ ", " ++ show lng ++ ")"
+    let url = baseURL ++ "/locate-neighbourhood?q=" ++ show lat ++ "," ++ show lng
+    makeRequest url
 -- | Make an HTTP request with error handling
 makeRequest :: String -> IO (Either APIError BL.ByteString)
 makeRequest url = do

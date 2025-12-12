@@ -12,6 +12,8 @@ module Database
   , queryCrimesByCategory
   , queryCrimesByMonth
   , getCrimeStats
+  , getForceIdByCode
+  , updateCrimeForce
   ) where
 
 import Database.SQLite.Simple
@@ -86,14 +88,16 @@ insertCrimeCategory conn (CrimeCategory url name) = do
 
 -- Add one crime record
 -- Note: This looks up the category by URL to get its ID
-insertCrime :: Connection -> Crime -> IO ()
+insertCrime :: Connection -> Crime -> IO Int
 insertCrime conn crime = do
   catId <- query conn
     "SELECT id FROM crime_categories WHERE category_url = ?"
     (Only (crimeCategory crime)) :: IO [Only Int]
 
   case catId of
-    [] -> putStrLn "Warning: Category not found, skipping crime"
+    [] -> do
+      putStrLn "Warning: Category not found, skipping crime"
+      return 0
     (Only cid : _) -> do
       execute conn
         "INSERT INTO crimes (crime_id, month, latitude, longitude, street_name, outcome_status, outcome_date, force_ref, category_ref) \
@@ -108,6 +112,8 @@ insertCrime conn crime = do
         , Nothing :: Maybe Int
         , cid
         )
+      [Only crimeDbId] <- query_ conn "SELECT last_insert_rowid()" :: IO [Only Int]
+      return crimeDbId
 
 
 -- Get all police forces from database
@@ -175,3 +181,18 @@ getCrimeStats conn =
     \JOIN crime_categories cc ON c.category_ref = cc.id \
     \GROUP BY cc.category_name \
     \ORDER BY COUNT(*) DESC"
+-- Get force database ID by force code
+getForceIdByCode :: Connection -> T.Text -> IO (Maybe Int)
+getForceIdByCode conn forceCode = do
+  results <- query conn
+    "SELECT id FROM forces WHERE force_id = ?"
+    (Only forceCode) :: IO [Only Int]
+  case results of
+    [] -> return Nothing
+    (Only fid : _) -> return (Just fid)
+-- Update a crime record to set its force reference
+updateCrimeForce :: Connection -> Int -> Maybe Int -> IO ()
+updateCrimeForce conn crimeDbId forceDbId = do
+  execute conn
+    "UPDATE crimes SET force_ref = ? WHERE id = ?"
+    (forceDbId, crimeDbId)

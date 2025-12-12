@@ -5,6 +5,7 @@ module Types
   ( Crime(..)
   , Force(..)
   , CrimeCategory(..)
+  , ForceLocation(..)
   ) where
 
 import GHC.Generics (Generic)
@@ -57,6 +58,16 @@ instance FromRow CrimeCategory where
 
 instance ToRow CrimeCategory where
   toRow (CrimeCategory url name) = toRow (url, name)
+
+-- Represents the force location
+data ForceLocation = ForceLocation
+  { locForce :: T.Text
+  } deriving (Show, Generic, Eq)
+
+instance FromJSON ForceLocation where
+  parseJSON = withObject "ForceLocation" $ \v -> ForceLocation
+    <$> v .: "force"
+
 
 
 -- Represents a single crime record

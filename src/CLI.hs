@@ -15,14 +15,15 @@ module CLI (runCLI) where
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.Directory (createDirectoryIfMissing)
-import Control.Monad (forM_)
+import Control.Monad (forM_, when)
 import qualified Data.Text as T
-import Database.SQLite.Simple (close)
+import Database.SQLite.Simple (close, query, Only(..))
 
 import qualified Fetch
 import qualified Parse
 import qualified Database
-import Types (Crime(..), Force(..), CrimeCategory(..))
+import qualified Types
+import Types (Crime(..), Force(..), CrimeCategory(..), ForceLocation(..))
 
 -- Run the CLI application
 runCLI :: IO ()
@@ -104,7 +105,18 @@ cmdLoadData = do
         Right crimesJson -> case Parse.parseCrimes crimesJson of
             Left parseErr -> putStrLn $ "Parse error: " ++ parseErr
             Right crimes -> do
-                forM_ crimes $ \crime -> Database.insertCrime conn crime
+                forceResult <- Fetch.fetchForceByLocation 51.5074 (-0.1278)
+                forceDbId <- case forceResult of
+                    Left _ -> return Nothing
+                    Right forceJson -> case Parse.parseForceLocation forceJson of
+                        Left _ -> return Nothing
+                        Right forceLoc -> Database.getForceIdByCode conn (Types.locForce forceLoc)
+
+                forM_ crimes $ \crime -> do
+                    crimeDbId <- Database.insertCrime conn crime
+                    when (crimeDbId > 0) $
+                        Database.updateCrimeForce conn crimeDbId forceDbId
+
                 putStrLn $ "Saved " ++ show (length crimes) ++ " crimes from London"
 
     putStrLn "Fetching crimes from Manchester..."
@@ -114,7 +126,18 @@ cmdLoadData = do
         Right crimesJson -> case Parse.parseCrimes crimesJson of
             Left parseErr -> putStrLn $ "Parse error: " ++ parseErr
             Right crimes -> do
-                forM_ crimes $ \crime -> Database.insertCrime conn crime
+                forceResult <- Fetch.fetchForceByLocation 53.4808 (-2.2426)
+                forceDbId <- case forceResult of
+                    Left _ -> return Nothing
+                    Right forceJson -> case Parse.parseForceLocation forceJson of
+                        Left _ -> return Nothing
+                        Right forceLoc -> Database.getForceIdByCode conn (Types.locForce forceLoc)
+
+                forM_ crimes $ \crime -> do
+                    crimeDbId <- Database.insertCrime conn crime
+                    when (crimeDbId > 0) $
+                        Database.updateCrimeForce conn crimeDbId forceDbId
+
                 putStrLn $ "Saved " ++ show (length crimes) ++ " crimes from Manchester"
 
     close conn
@@ -154,14 +177,37 @@ cmdCrimesByCategory category = do
 
     close conn
     putStrLn "Query complete"
-    where
-        when cond action = if cond then action else return ()
 
 -- Query crimes by force
 cmdCrimesByForce :: String -> IO ()
 cmdCrimesByForce forceId = do
     putStrLn $ "Querying crimes for force: " ++ forceId
-    putStrLn "Note: Force filtering not yet implemented in database schema"
+    conn <- Database.initDatabase "data/police.db"
+
+    forceDbId <- Database.getForceIdByCode conn (T.pack forceId)
+
+    case forceDbId of
+        Nothing -> putStrLn "Force not found"
+        Just fid -> do
+            results <- query conn
+                "SELECT c.crime_id, c.month, c.latitude, c.longitude, c.street_name, \
+                \c.outcome_status, c.outcome_date, cc.category_url \
+                \FROM crimes c \
+                \JOIN crime_categories cc ON c.category_ref = cc.id \
+                \WHERE c.force_ref = ?"
+                (Only fid)
+                :: IO [(Maybe T.Text, T.Text, Double, Double, Maybe T.Text, Maybe T.Text, Maybe T.Text, T.Text)]
+
+            let crimes = [Crime cid cat mon lat lng sname ostatus odate | (cid, mon, lat, lng, sname, ostatus, odate, cat) <- results]
+
+            putStrLn $ "Found " ++ show (length crimes) ++ " crimes for force " ++ forceId
+            forM_ (take 10 crimes) $ \crime -> do
+                putStrLn $ "  - " ++ T.unpack (crimeCategory crime) ++ " in " ++ T.unpack (crimeMonth crime)
+
+            when (length crimes > 10) $
+                putStrLn $ "  ... and " ++ show (length crimes - 10) ++ " more"
+
+    close conn
     putStrLn "Query complete"
 
 -- Query crimes by month
@@ -182,8 +228,6 @@ cmdCrimesInMonth month = do
 
     close conn
     putStrLn "Query complete"
-    where
-        when cond action = if cond then action else return ()
 
 -- Show crime statistics
 cmdForceStats :: IO ()

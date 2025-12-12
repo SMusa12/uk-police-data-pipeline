@@ -4,11 +4,12 @@ module Parse
   ( parseCrimes
   , parseForces
   , parseCrimeCategories
+  , parseForceLocation
   , writeCrimes
   , writeAllData
   ) where
 
-import Types (Crime, Force, CrimeCategory)
+import Types (Crime, Force, CrimeCategory, ForceLocation)
 import Data.Aeson ( eitherDecode, encode, object, (.=) )
 import qualified Data.ByteString.Lazy as B
 
@@ -21,6 +22,11 @@ parseCrimes = eitherDecode
 -- Parse police forces from the API response
 parseForces :: B.ByteString -> Either String [Force]
 parseForces = eitherDecode
+-- parse force location
+parseForceLocation :: B.ByteString -> Either String ForceLocation
+parseForceLocation = eitherDecode
+
+
 
 
 -- Parse crime categories from the API response
@@ -28,7 +34,7 @@ parseCrimeCategories :: B.ByteString -> Either String [CrimeCategory]
 parseCrimeCategories = eitherDecode
 
 
--- Write just the crimes to a JSON file
+--  writing the crimes to a JSON file
 writeCrimes :: FilePath -> [Crime] -> IO ()
 writeCrimes fp crimes = B.writeFile fp (encode crimes)
 
